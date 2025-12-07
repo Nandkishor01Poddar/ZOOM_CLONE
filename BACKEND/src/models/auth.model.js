@@ -32,6 +32,7 @@ const authSchema = new Schema(
       default: "user",
     },
 
+    // MAIN FLAG: agar email OR phone verified -> true
     isVerified: {
       type: Boolean,
       default: false,
@@ -45,18 +46,18 @@ const authSchema = new Schema(
   { timestamps: true }
 );
 
-// 🔐 password save hone se pehle hash karo
-authSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+// 🔐 Hash password before save (async style, NO next)
+authSchema.pre("save", async function () {
+  if (!this.isModified("password")) return
 
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
-});
+  const salt = await bcrypt.genSalt(10)
+  this.password = await bcrypt.hash(this.password, salt)
+})
 
-// password compare karne ke liye method
-authSchema.methods.comparePassword = async function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password);
-};
+// ✅ Instance method for password comparison
+authSchema.methods.comparePassword = async function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password)
+}
 
 const Auth = mongoose.model("Auth", authSchema);
 

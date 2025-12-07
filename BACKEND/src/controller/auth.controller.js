@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken"
 import httpStatus from "http-status";
-import { Auth } from "../models/auth.model"
+import { Auth } from "../models/auth.model.js"
 
 const generateToken = (userId) => {
     return jwt.sign(
