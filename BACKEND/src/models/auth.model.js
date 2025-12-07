@@ -26,6 +26,13 @@ const authSchema = new Schema(
       select: false, // password by default query me nahi aayega
     },
 
+    phone: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true, // "+91..." format recommended
+    },
+
     role: {
       type: String,
       enum: ["user", "admin"],
@@ -37,6 +44,28 @@ const authSchema = new Schema(
       type: Boolean,
       default: false,
     },
+
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Email OTP
+    emailOtpCode: String,
+    emailOtpExpires: Date,
+
+    // Phone OTP
+    phoneOtpCode: String,
+    phoneOtpExpires: Date,
+
+    // Forgot password reset token (hashed) + expiry
+    resetPasswordToken: String,
+    resetPasswordExpires: Date,
 
     lastLoginAt: {
       type: Date,
