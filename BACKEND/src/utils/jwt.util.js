@@ -1,21 +1,73 @@
+// utils/jwt.util.js
 import jwt from "jsonwebtoken";
 
-// Access Token: short-lived, includes id + role
+// =======================
+// ACCESS TOKEN GENERATOR
+// =======================
 const generateAccessToken = (userId, role) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is missing in environment variables");
+  }
+
   return jwt.sign(
-    { id: userId, role },                       // payload
-    process.env.JWT_SECRET,                    // secret
-    { expiresIn: process.env.JWT_EXPIRES_IN || "15m" } // default 15 minutes
+    { id: userId, role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "15m" }
   );
 };
 
-// Refresh Token: longer-lived, usually only id
+// =======================
+// REFRESH TOKEN GENERATOR
+// =======================
 const generateRefreshToken = (userId) => {
+  if (!process.env.JWT_REFRESH_SECRET) {
+    throw new Error("JWT_REFRESH_SECRET is missing in environment variables");
+  }
+
   return jwt.sign(
-    { id: userId },                            // payload
-    process.env.JWT_REFRESH_SECRET,            // secret
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d" } // default 7 days
+    { id: userId },
+    process.env.JWT_REFRESH_SECRET,
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d" }
   );
 };
 
-export { generateAccessToken, generateRefreshToken };
+// =======================
+// SAFE VERIFY ACCESS TOKEN
+// =======================
+const verifyAccessToken = (token) => {
+  try {
+    return {
+      ok: true,
+      data: jwt.verify(token, process.env.JWT_SECRET),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message,
+    };
+  }
+};
+
+// =======================
+// SAFE VERIFY REFRESH TOKEN
+// =======================
+const verifyRefreshToken = (token) => {
+  try {
+    return {
+      ok: true,
+      data: jwt.verify(token, process.env.JWT_REFRESH_SECRET),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message,
+    };
+  }
+};
+
+export {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyAccessToken,
+  verifyRefreshToken,
+};

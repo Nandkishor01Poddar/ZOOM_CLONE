@@ -1,3 +1,4 @@
+// models/auth.model.js
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
 
@@ -30,7 +31,7 @@ const authSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true, // "+91..." format recommended
+      trim: true, // e.g. "+91..." format
     },
 
     role: {
@@ -39,7 +40,7 @@ const authSchema = new Schema(
       default: "user",
     },
 
-    // MAIN FLAG: agar email OR phone verified -> true
+    // MAIN FLAG: email OR phone verified -> true
     isVerified: {
       type: Boolean,
       default: false,
@@ -56,15 +57,24 @@ const authSchema = new Schema(
     },
 
     // Email OTP
-    emailOtpCode: String,
+    emailOtpCode: {
+      type: String,
+      // select: false  // optional, agar response me kabhi chahi hi nahi
+    },
     emailOtpExpires: Date,
 
     // Phone OTP
-    phoneOtpCode: String,
+    phoneOtpCode: {
+      type: String,
+      // select: false
+    },
     phoneOtpExpires: Date,
 
     // Forgot password reset token (hashed) + expiry
-    resetPasswordToken: String,
+    resetPasswordToken: {
+      type: String,
+      // select: false
+    },
     resetPasswordExpires: Date,
 
     lastLoginAt: {
@@ -75,18 +85,18 @@ const authSchema = new Schema(
   { timestamps: true }
 );
 
-// 🔐 Hash password before save (async style, NO next)
+// 🔐 Hash password before save
 authSchema.pre("save", async function () {
-  if (!this.isModified("password")) return
+  if (!this.isModified("password")) return;
 
-  const salt = await bcrypt.genSalt(10)
-  this.password = await bcrypt.hash(this.password, salt)
-})
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
 
 // ✅ Instance method for password comparison
 authSchema.methods.comparePassword = async function (candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password)
-}
+  return bcrypt.compare(candidatePassword, this.password);
+};
 
 const Auth = mongoose.model("Auth", authSchema);
 
