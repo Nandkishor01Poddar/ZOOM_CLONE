@@ -70,6 +70,28 @@ const authSchema = new Schema(
     },
     phoneOtpExpires: Date,
 
+    // Email OTP rate limiting
+    emailOtpRequestCount: {
+      type: Number,
+      default: 0,
+    },
+
+    emailOtpWindowStart: {
+      type: Date,
+      default: null,
+    },
+
+    // Phone OTP rate limiting
+    phoneOtpRequestCount: {
+      type: Number,
+      default: 0,
+    },
+
+    phoneOtpWindowStart: {
+      type: Date,
+      default: null,
+    },
+
     // Forgot password reset token (hashed) + expiry
     resetPasswordToken: {
       type: String,

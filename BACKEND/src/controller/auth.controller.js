@@ -1,10 +1,12 @@
-// controllers/auth.controller.js
+// controller/auth.controller.js
+
 import httpStatus from "http-status";
 import { Auth } from "../models/auth.model.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { generateOTP, hashOtp, tokenOtp } from "../utils/Otp/otp.utils.js";
 import sendEmail from "../utils/Email/send.email.js";
 import sanitizeUser from "../utils/user/sanitizeUser.js";
+import { sendSms, toE164 } from "../utils/sms/twilio.sms.js";
 
 // ================= REGISTER =================
 const registerUser = async (req, res) => {
@@ -19,7 +21,9 @@ const registerUser = async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedUsername = username.trim().toLowerCase();
-    const normalizedPhone = String(phone).trim();
+
+    // ✅ store phone in canonical E.164 format
+    const normalizedPhone = toE164(phone); 
 
     // ✅ Check if user already exists (email / username / phone)
     const isUserAlreadyExist = await Auth.findOne({
@@ -38,36 +42,50 @@ const registerUser = async (req, res) => {
     }
 
     // ================== EMAIL OTP PART ==================
-    const otp = generateOTP(); // default 6 digits
-    const hashedOtp = hashOtp(otp);
+    const emailOtp = generateOTP(); // 6-digit for email
+    const hashedEmailOtp = hashOtp(emailOtp);
+
+    // ================== PHONE OTP PART ==================
+    const phoneOtp = generateOTP(); // 6-digit for phone
+    const hashedPhoneOtp = hashOtp(phoneOtp);
 
     const newUser = await Auth.create({
       username: normalizedUsername,
       email: normalizedEmail,
       password,
       role,
-      phone: normalizedPhone,
+      phone: normalizedPhone, // ⬅️ stored as E.164
+
       isEmailVerified: false,
+      isPhoneVerified: false,
       isVerified: false,
-      emailOtpCode: hashedOtp,
+
+      emailOtpCode: hashedEmailOtp,
       emailOtpExpires: tokenOtp(5), // 5 min expiry
+
+      phoneOtpCode: hashedPhoneOtp,
+      phoneOtpExpires: tokenOtp(5), // 5 min expiry
     });
 
+    // 📧 Send email OTP
     await sendEmail({
       to: normalizedEmail,
       subject: "Verify your email.",
-      text: `Your verification code is ${otp}`,
+      text: `Your email verification code is ${emailOtp}`,
     });
 
-    // NOTE:
-    // Agar tum chaho, yahan tokens na bhejo.
+    // 📲 Send phone OTP (same normalized phone)
+    await sendSms({
+      to: normalizedPhone,
+      text: `Your ${process.env.APP_NAME} phone verification code is ${phoneOtp}`,
+    });
+
     const accessToken = generateAccessToken(newUser._id, newUser.role);
     const refreshToken = generateRefreshToken(newUser._id);
-
     const safeUser = sanitizeUser(newUser);
 
     return res.status(httpStatus.CREATED).json({
-      message: "User registered. Please verify your email.",
+      message: "User registered. Please verify your email or phone.",
       accessToken,
       refreshToken,
       user: safeUser,
@@ -96,13 +114,14 @@ const loginUser = async (req, res) => {
 
     const rawIdentifier = String(identifier).trim();
     const lowerIdentifier = rawIdentifier.toLowerCase();
+    const normalizedPhoneForLogin = toE164(rawIdentifier);
 
-    // Find by email OR username OR phone
+    // Match user by (email OR username OR phone)
     const user = await Auth.findOne({
       $or: [
-        { email: lowerIdentifier }, // email stored lowercase
-        { username: lowerIdentifier }, // username stored lowercase
-        { phone: rawIdentifier }, // phone as-is (with +91 etc)
+        { email: lowerIdentifier },
+        { username: lowerIdentifier },
+        { phone: normalizedPhoneForLogin },
       ],
     }).select("+password");
 
@@ -112,21 +131,24 @@ const loginUser = async (req, res) => {
       });
     }
 
+    // Check password
     const isPassValid = await user.comparePassword(password);
-
     if (!isPassValid) {
       return res.status(httpStatus.UNAUTHORIZED).json({
         message: "Invalid credentials.",
       });
     }
 
-    if (!user.isEmailVerified) {
+    // Check verification
+    if (!user.isVerified) {
       return res.status(httpStatus.FORBIDDEN).json({
-        message: "Please verify your email before logging in.",
-        canRequestEmailOtp: true,
+        message: "Please verify your email or phone before logging in.",
+        canRequestEmailOtp: !user.isEmailVerified,
+        canRequestPhoneOtp: !user.isPhoneVerified,
       });
     }
 
+    // Update last login
     await Auth.updateOne(
       { _id: user._id },
       { $set: { lastLoginAt: new Date() } }
@@ -134,7 +156,6 @@ const loginUser = async (req, res) => {
 
     const accessToken = generateAccessToken(user._id, user.role);
     const refreshToken = generateRefreshToken(user._id);
-
     const safeUser = sanitizeUser(user);
 
     return res.status(httpStatus.OK).json({
@@ -143,6 +164,7 @@ const loginUser = async (req, res) => {
       refreshToken,
       user: safeUser,
     });
+
   } catch (error) {
     console.error("LOGIN ERROR:", error);
     return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({

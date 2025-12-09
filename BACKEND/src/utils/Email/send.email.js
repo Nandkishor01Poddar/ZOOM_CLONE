@@ -1,11 +1,11 @@
 import "dotenv/config"; 
 import nodemailer from "nodemailer";
 
-console.log("SMTP CONFIG →", {
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  user: process.env.SMTP_USER,
-});
+// console.log("SMTP CONFIG →", {
+//   host: process.env.SMTP_HOST,
+//   port: process.env.SMTP_PORT,
+//   user: process.env.SMTP_USER,
+// });
 
 // 📨 Single reusable transporter (Mailtrap / Gmail / any SMTP)
 const transporter = nodemailer.createTransport({
