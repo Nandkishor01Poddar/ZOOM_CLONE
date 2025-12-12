@@ -20,8 +20,16 @@ import {
   verifyPhoneOtp,
 } from "../controller/phoneOtp.controller.js";
 
-// 🔥 NEW: unified OTP verify controller
+// Unified OTP verify controller
 import { verifyUnifiedOtp } from "../controller/otp.controller.js";
+
+// 🔐 Auth + Device controllers
+import { authMiddleware } from "../middlewares/auth.middleware.js";
+import {
+  getDevices,
+  trustDevice,
+  removeDevice,
+} from "../controller/device.controller.js";
 
 const router = express.Router();
 
@@ -38,7 +46,7 @@ router.post("/register", registerValidator, asyncHandler(registerUser));
 router.post("/login", loginValidator, asyncHandler(loginUser));
 
 // ====================== EMAIL VERIFICATION ======================
-// (Legacy / dedicated email OTP endpoints, fully working)
+// (Legacy / dedicated email OTP endpoints)
 
 // REQUEST EMAIL OTP
 router.post("/request-email-otp", asyncHandler(requestEmailVerification));
@@ -47,7 +55,7 @@ router.post("/request-email-otp", asyncHandler(requestEmailVerification));
 router.post("/verify-email", asyncHandler(verifyEmail));
 
 // ====================== PHONE VERIFICATION ======================
-// (Legacy / dedicated phone OTP endpoints, fully working)
+// (Legacy / dedicated phone OTP endpoints)
 
 // REQUEST PHONE OTP
 router.post("/request-phone-otp", asyncHandler(requestPhoneOtp));
@@ -61,17 +69,42 @@ router.post("/verify-phone", asyncHandler(verifyPhoneOtp));
  *
  * Body example:
  *  {
- *    "type": "email",          // or "phone"
- *    "identifier": "user@mail.com", // or phone number, e.g. "8862..." ya "+9188..."
+ *    "type": "email",                // or "phone"
+ *    "identifier": "user@mail.com",  // or phone number, e.g. "8862..." or "+9188..."
  *    "otp": "123456"
  *  }
  *
- * - Agar type === "email"  -> verifyEmailOtp(...) use hoga
- * - Agar type === "phone"  -> verifyPhoneOtpService(...) use hoga
- * - Response:
- *    - success: { message: "Verification successful.", ... }
- *    - fail:    { message: "...", reason: "INVALID" | "EXPIRED" | ... }
+ * - type === "email" -> verifyEmailOtp(...) use hoga
+ * - type === "phone" -> verifyPhoneOtpService(...) use hoga
  */
 router.post("/verify-otp", asyncHandler(verifyUnifiedOtp));
+
+// ====================== DEVICE MANAGEMENT (PROTECTED) ======================
+/**
+ * GET /devices
+ * - Logged-in user ke saare devices return karega
+ */
+router.get("/devices", authMiddleware, asyncHandler(getDevices));
+
+/**
+ * PATCH /devices/:deviceId/trust
+ * Body:
+ *  { "isTrusted": true | false }
+ */
+router.patch(
+  "/devices/:deviceId/trust",
+  authMiddleware,
+  asyncHandler(trustDevice)
+);
+
+/**
+ * DELETE /devices/:deviceId
+ * - User apne account se kisi device ko remove kar sakta hai
+ */
+router.delete(
+  "/devices/:deviceId",
+  authMiddleware,
+  asyncHandler(removeDevice)
+);
 
 export default router;

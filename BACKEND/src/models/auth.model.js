@@ -1,9 +1,39 @@
 // models/auth.model.js
+// =============================================================
+// USER AUTH MODEL (CLEANED + ORGANIZED + DEVICE-BASED SECURITY)
+// =============================================================
+
 import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
 
+// -------------------------------------------------------------
+//  DEVICE SCHEMA (Used for device-based login security)
+// -------------------------------------------------------------
+// Each login device gets a record:
+// - deviceId: frontend-generated UUID stored in localStorage
+// - userAgent: Browser/OS info
+// - ip: IP address of login attempt
+// - isTrusted: true if user marked device as trusted
+// - firstLoginAt: first time device used
+// - lastLoginAt: last time device logged in
+// -------------------------------------------------------------
+const DeviceSchema = new Schema({
+  deviceId: { type: String, required: true },
+  userAgent: { type: String },
+  ip: { type: String },
+  isTrusted: { type: Boolean, default: false },
+  firstLoginAt: { type: Date, default: Date.now },
+  lastLoginAt: { type: Date, default: Date.now },
+});
+
+// -------------------------------------------------------------
+//  MAIN AUTH SCHEMA
+// -------------------------------------------------------------
 const authSchema = new Schema(
   {
+    // -------------------------------
+    // Basic required fields
+    // -------------------------------
     email: {
       type: String,
       required: true,
@@ -24,14 +54,14 @@ const authSchema = new Schema(
       type: String,
       required: true,
       minlength: 8,
-      select: false, // password by default query me nahi aayega
+      select: false, // Never return password in queries unless explicitly selected
     },
 
     phone: {
       type: String,
       required: true,
       unique: true,
-      trim: true, // e.g. "+91..." format
+      trim: true, // Stored in +91... E.164 format
     },
 
     role: {
@@ -40,10 +70,12 @@ const authSchema = new Schema(
       default: "user",
     },
 
-    // MAIN FLAG: email OR phone verified -> true
+    // -------------------------------
+    // Verification Flags
+    // -------------------------------
     isVerified: {
       type: Boolean,
-      default: false,
+      default: false, // True if email OR phone is verified
     },
 
     isEmailVerified: {
@@ -56,70 +88,73 @@ const authSchema = new Schema(
       default: false,
     },
 
-    // Email OTP
-    emailOtpCode: {
-      type: String,
-      // select: false  // optional, agar response me kabhi chahi hi nahi
-    },
-    emailOtpExpires: Date,
+    // -------------------------------
+    // Email OTP (hashed + expiry)
+    // -------------------------------
+    emailOtpCode: { type: String },
+    emailOtpExpires: { type: Date },
 
-    // Phone OTP
-    phoneOtpCode: {
-      type: String,
-      // select: false
-    },
-    phoneOtpExpires: Date,
+    // -------------------------------
+    // Phone OTP (hashed + expiry)
+    // -------------------------------
+    phoneOtpCode: { type: String },
+    phoneOtpExpires: { type: Date },
 
-    // Email OTP rate limiting
-    emailOtpRequestCount: {
-      type: Number,
-      default: 0,
-    },
+    // -------------------------------
+    // EMAIL OTP Rate Limiting
+    // - Max 5 requests per hour
+    // -------------------------------
+    emailOtpRequestCount: { type: Number, default: 0 },
+    emailOtpWindowStart: { type: Date, default: null },
 
-    emailOtpWindowStart: {
-      type: Date,
-      default: null,
-    },
+    // -------------------------------
+    // PHONE OTP Rate Limiting
+    // -------------------------------
+    phoneOtpRequestCount: { type: Number, default: 0 },
+    phoneOtpWindowStart: { type: Date, default: null },
 
-    // Phone OTP rate limiting
-    phoneOtpRequestCount: {
-      type: Number,
-      default: 0,
-    },
+    // -------------------------------
+    // FORGOT PASSWORD / RESET TOKEN
+    // -------------------------------
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
 
-    phoneOtpWindowStart: {
-      type: Date,
-      default: null,
-    },
+    // -------------------------------
+    // LOGIN HISTORY
+    // -------------------------------
+    lastLoginAt: { type: Date, default: null },
 
-    // Forgot password reset token (hashed) + expiry
-    resetPasswordToken: {
-      type: String,
-      // select: false
-    },
-    resetPasswordExpires: Date,
-
-    lastLoginAt: {
-      type: Date,
-      default: null,
+    // -------------------------------
+    // DEVICE-BASED LOGIN SECURITY
+    // -------------------------------
+    devices: {
+      type: [DeviceSchema],
+      default: [],
     },
   },
   { timestamps: true }
 );
 
-// 🔐 Hash password before save
+// -------------------------------------------------------------
+//  PASSWORD HASHING (Before save)
+// -------------------------------------------------------------
 authSchema.pre("save", async function () {
+  // Run only if password modified
   if (!this.isModified("password")) return;
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-// ✅ Instance method for password comparison
+// -------------------------------------------------------------
+//  PASSWORD COMPARISON METHOD
+// -------------------------------------------------------------
 authSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+// -------------------------------------------------------------
+//  EXPORT MODEL
+// -------------------------------------------------------------
 const Auth = mongoose.model("Auth", authSchema);
-
 export { Auth };

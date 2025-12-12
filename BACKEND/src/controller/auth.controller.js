@@ -2,11 +2,19 @@
 
 import httpStatus from "http-status";
 import { Auth } from "../models/auth.model.js";
-import { generateAccessToken, generateRefreshToken } from "../utils/jwt.util.js";
-import { generateOTP, hashOtp, tokenOtp } from "../utils/Otp/otp.utils.js";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+} from "../utils/jwt.util.js";
+import {
+  generateOTP,
+  hashOtp,
+  tokenOtp,
+} from "../utils/Otp/otp.utils.js";
 import sendEmail from "../utils/Email/send.email.js";
 import sanitizeUser from "../utils/user/sanitizeUser.js";
 import { sendSms, toE164 } from "../utils/sms/twilio.sms.js";
+import { handleDeviceOnLogin } from "../services/Device/device.service.js";
 
 // ================= REGISTER =================
 const registerUser = async (req, res) => {
@@ -23,7 +31,7 @@ const registerUser = async (req, res) => {
     const normalizedUsername = username.trim().toLowerCase();
 
     // ✅ store phone in canonical E.164 format
-    const normalizedPhone = toE164(phone); 
+    const normalizedPhone = toE164(phone);
 
     // ✅ Check if user already exists (email / username / phone)
     const isUserAlreadyExist = await Auth.findOne({
@@ -103,8 +111,9 @@ const registerUser = async (req, res) => {
 // ================= LOGIN =================
 const loginUser = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { identifier, password, deviceId, rememberDevice } = req.body;
 
+    // Basic validation
     if (!identifier || !password) {
       return res.status(httpStatus.BAD_REQUEST).json({
         message:
@@ -114,16 +123,15 @@ const loginUser = async (req, res) => {
 
     const rawIdentifier = String(identifier).trim();
     const lowerIdentifier = rawIdentifier.toLowerCase();
-    const normalizedPhoneForLogin = toE164(rawIdentifier);
 
-    // Match user by (email OR username OR phone)
+    // Find by email OR username OR phone
     const user = await Auth.findOne({
       $or: [
-        { email: lowerIdentifier },
-        { username: lowerIdentifier },
-        { phone: normalizedPhoneForLogin },
+        { email: lowerIdentifier }, // email stored lowercase
+        { username: lowerIdentifier }, // username stored lowercase
+        { phone: rawIdentifier }, // phone stored as normalized E.164
       ],
-    }).select("+password");
+    }).select("+password"); // include password for comparison
 
     if (!user) {
       return res.status(httpStatus.UNAUTHORIZED).json({
@@ -131,15 +139,16 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // Check password
+    // Password verify
     const isPassValid = await user.comparePassword(password);
+
     if (!isPassValid) {
       return res.status(httpStatus.UNAUTHORIZED).json({
         message: "Invalid credentials.",
       });
     }
 
-    // Check verification
+    // ⭐ MAIN CHECK: email OR phone, koi ek verified ho
     if (!user.isVerified) {
       return res.status(httpStatus.FORBIDDEN).json({
         message: "Please verify your email or phone before logging in.",
@@ -148,23 +157,39 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // Update last login
-    await Auth.updateOne(
-      { _id: user._id },
-      { $set: { lastLoginAt: new Date() } }
-    );
+    // ================= DEVICE-BASED SECURITY PART =================
+    const userAgent = req.get("user-agent") || "unknown";
+    const ip =
+      req.ip ||
+      req.headers["x-forwarded-for"] ||
+      req.socket?.remoteAddress ||
+      "unknown";
 
-    const accessToken = generateAccessToken(user._id, user.role);
-    const refreshToken = generateRefreshToken(user._id);
-    const safeUser = sanitizeUser(user);
+    const { user: updatedUser, isNewDevice, device } =
+      await handleDeviceOnLogin({
+        user,
+        deviceId,
+        userAgent,
+        ip,
+        rememberDevice,
+      });
+
+    const accessToken = generateAccessToken(updatedUser._id, updatedUser.role);
+    const refreshToken = generateRefreshToken(updatedUser._id);
+
+    const safeUser = sanitizeUser(updatedUser);
 
     return res.status(httpStatus.OK).json({
       message: "Logged in successfully.",
       accessToken,
       refreshToken,
       user: safeUser,
+      deviceInfo: {
+        isNewDevice,
+        deviceId: deviceId || null,
+        isTrusted: device ? device.isTrusted : null,
+      },
     });
-
   } catch (error) {
     console.error("LOGIN ERROR:", error);
     return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({

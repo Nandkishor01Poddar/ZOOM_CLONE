@@ -1,5 +1,3 @@
-// controller/phoneOtp.controller.js
-
 import httpStatus from "http-status";
 import {
   requestPhoneOtpService,
